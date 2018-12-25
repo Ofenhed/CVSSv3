@@ -47,3 +47,7 @@ tests:
     - -with-rtsopts=-N
     dependencies:
     - Cvss3
+    - test-framework
+    - test-framework-hunit
+    - HUnit
+    - containers
