@@ -11,7 +11,9 @@ $(dataDef "CvssV3" [("AttackVector", "AV", [("Network", "N"), ("Adjacent Network
                     ("AttackComplexity", "AC", [("Low", "L"), ("High", "H")]),
                     ("PrivilegesRequired", "PR", [("None", "N"), ("Low", "L"), ("High", "H")])]
                    [("Temporal", [("Exploitability", "E", [("Not Defined", "X")
-                                                          ,("Unproven That Exploit Exists", "U")])])
+                                                          ,("Unproven That Exploit Exists", "U")]),
+                                  ("ReportConfidence", "RC", [("Not Defined", "X")
+                                                          ,("Unknown", "U")])])
                    ,("Environmental", [("Attack Vector", "MAV", [("Not Defined", "X")
                                                                 ,("Network", "N")])
                                       ,("Attack Complexity", "MAC", [("Not Defined", "X")

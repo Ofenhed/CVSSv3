@@ -2,7 +2,8 @@
 module Data.Cvss.Internal.TH (dataDef) where
 
 import Language.Haskell.TH
-import Data.List (elemIndex, intercalate, concat)
+import Data.List (elemIndex, intercalate, concat, find)
+import Data.Maybe (isJust, catMaybes)
 
 --DataD
 --  :: Cxt
@@ -25,9 +26,20 @@ toLowerInitial orig@(a:rest) = case elemIndex a upper of
 
 dataDef:: String -> [(String, String, [(String, String)])] -> [(String, [(String, String, [(String, String)])])] -> DecsQ
 dataDef topName types optionalTypes = do
-  f_intercalate <- runQ [| intercalate |]
-  f_readParen <- runQ [| readParen |]
+  f__dotFunction <- runQ [| (.) |]
+  f_catMaybes <- runQ [| catMaybes |]
   f_concat <- runQ [| concat |]
+  f_filter <- runQ [| filter |]
+  f_find <- runQ [| find |]
+  f_flip <- runQ [| flip |]
+  f_fst <- runQ [| fst |]
+  f_intercalate <- runQ [| intercalate |]
+  f_isJust <- runQ [| isJust |]
+  f_length <- runQ [| length |]
+  f_map <- runQ [| map |]
+  f_readParen <- runQ [| readParen |]
+  f_snd <- runQ [| snd |]
+  f_show <- runQ [| show |]
   ConE n_infix <- runQ [| (:) |]
   createSubTypes' <- flip mapM (("", types):optionalTypes) $ \(category, list) -> flip mapM list $ \(metricName, _, metricValues) ->
                        dataD
@@ -59,22 +71,30 @@ dataDef topName types optionalTypes = do
   let deriveShowSubs = concat deriveShowSubs'
   deriveShowTop <- do
     varName <- newName "var"
-    match <- newName "patternMatch"
     instanceD
       (return [])
       (appT (conT $ mkName "Show") $ conT $ toName topName)
-      [funD (mkName "show") [return $ Clause [VarP varName]
-                                             (NormalB $ AppE
-                                                          (AppE f_intercalate $ LitE $ StringL "/")
-                                                          (AppE f_concat $ ListE
-                                                                             ((ListE $ flip map types $ \(metricName, metricShort, _) -> AppE (VarE $ mkName "show") $ AppE (VarE $ toName $ toLowerInitial metricName) (VarE varName)):
-                                                                             (flip map optionalTypes $ \(category, types) ->
-                                                                                ListE $ flip map types $ \(metricName, metricShort, (((defName), _):_)) -> AppE (VarE $ mkName "show") $
-                                                                                  CaseE (AppE (VarE $ toName $ toLowerInitial $ category ++ metricName) (VarE varName))
-                                                                                           [Match (ConP (toName $ category ++ metricName ++ defName) []) (NormalB $ TupE [ConE $ mkName "False", ConE (toName $ category ++ metricName ++ defName)]) []
-                                                                                           ,Match (VarP match) (NormalB $ TupE [ConE $ mkName "True", VarE match]) []]
-                                                                             ))))
-                                             []]]
+      [funD (mkName "show") [clause [varP varName]
+                                    (normalB $ appE
+                                                 (appE (return f_intercalate) $ litE $ stringL "/")
+                                                 (appE (return f_concat) $ listE
+                                                                    ((listE $ flip map types $ \(metricName, metricShort, _) -> appE (varE $ mkName "show") $ appE (varE $ toName $ toLowerInitial metricName) (varE varName)):
+                                                                    (flip map optionalTypes $ \(category, types) -> do
+                                                                       valueVar <- newName "value"
+                                                                       listVar <- newName "list"
+                                                                       letE [valD (varP listVar)
+                                                                                  (normalB $ listE $ flip map types $ \(metricName, metricShort, (((defName), _):_)) -> do
+                                                                                              matchVar <- newName "match"
+                                                                                              caseE (appE (varE $ toName $ toLowerInitial $ category ++ metricName) (varE varName))
+                                                                                                       [match (conP (toName $ category ++ metricName ++ defName) []) (normalB $ tupE [conE $ mkName "False", appE (return f_show) $ conE (toName $ category ++ metricName ++ defName)]) []
+                                                                                                       ,match (varP matchVar) (normalB $ tupE [conE $ mkName "True", appE (return f_show) $ varE matchVar]) []])
+                                                                                  []] $ condE (appE (return f_isJust) 
+                                                                                                 (appE (appE (return f_find) (return f_fst)) $
+                                                                                                       varE listVar))
+                                                                                           (appE (appE (return f_map) (return f_snd)) $ varE listVar)
+                                                                                           (listE [])
+                                                                    ))))
+                                    []]]
   deriveReadSubs <- flip mapM types $ \(metricName, metricShort, metricValues) -> do
                       depth <- newName "d" 
                       instanceD
