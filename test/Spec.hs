@@ -12,5 +12,6 @@ idTest v = v @?= (read $ show v)
 main :: IO ()
 main = defaultMainWithOpts
        [testCase "id-av:p" $ idTest AttackVectorPhysical
-       ,testCase "id-ac:h" $ idTest AttackComplexityHigh]
+       ,testCase "id-ac:h" $ idTest AttackComplexityHigh
+       ,testCase "id-mac:l" $ idTest EnvironmentalAttackComplexityLow]
        mempty

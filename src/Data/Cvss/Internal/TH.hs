@@ -95,21 +95,22 @@ dataDef topName types optionalTypes = do
                                                                                            (listE [])
                                                                     ))))
                                     []]]
-  deriveReadSubs <- flip mapM types $ \(metricName, metricShort, metricValues) -> do
-                      depth <- newName "d" 
-                      instanceD
-                        (return [])
-                        (appT (conT $ mkName "Read") $ conT $ toName metricName)
-                        [funD (mkName "readsPrec")
-                              [clause [varP depth]
-                                      (normalB $ appE (appE (return f_readParen) $ conE $ mkName "False") $
-                                                       lamCaseE $ flip map metricValues $ \(valueName, valueShort) -> do
-                                                                     restVar <- newName "rest" 
-                                                                     let str = metricShort ++ ":" ++ valueShort
-                                                                     match (return $ foldr (\c rest -> InfixP (LitP $ CharL c) n_infix rest) (VarP restVar) str)
-                                                                           (normalB $ listE [tupE [conE $ toName $ metricName ++ valueName, varE restVar]])
-                                                                           [])
-                                      []]]
+  deriveReadSubs' <- flip mapM (("",types):optionalTypes) $ \(category, types) -> flip mapM types $ \(metricName, metricShort, metricValues) -> do
+                       depth <- newName "d" 
+                       instanceD
+                         (return [])
+                         (appT (conT $ mkName "Read") $ conT $ toName $ category ++ metricName)
+                         [funD (mkName "readsPrec")
+                               [clause [varP depth]
+                                       (normalB $ appE (appE (return f_readParen) $ conE $ mkName "False") $
+                                                        lamCaseE $ flip map metricValues $ \(valueName, valueShort) -> do
+                                                                      restVar <- newName "rest" 
+                                                                      let str = metricShort ++ ":" ++ valueShort
+                                                                      match (return $ foldr (\c rest -> InfixP (LitP $ CharL c) n_infix rest) (VarP restVar) str)
+                                                                            (normalB $ listE [tupE [conE $ toName $ category ++ metricName ++ valueName, varE restVar]])
+                                                                            [])
+                                       []]]
+  let deriveReadSubs = concat deriveReadSubs'
   return $ (createTopType:createSubTypes)
         ++ (deriveShowTop:deriveShowSubs)
         ++ (deriveReadSubs)
