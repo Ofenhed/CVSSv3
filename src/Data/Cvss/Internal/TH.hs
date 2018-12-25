@@ -24,6 +24,12 @@ toLowerInitial orig@(a:rest) = case elemIndex a upper of
     lower = ['a'..'z']
     upper = ['A'..'Z']
 
+type SubTypeEnum = (String, String)
+type SubTypeEnums = [SubTypeEnum]
+type SubTypeSpecification = (String, String, SubTypeEnums)
+type OptionalSubTypeSpecification = (String, SubTypeSpecification)
+
+
 dataDef:: String -> [(String, String, [(String, String)])] -> [(String, [(String, String, [(String, String)])])] -> DecsQ
 dataDef topName types optionalTypes = do
   f__dotFunction <- runQ [| (.) |]
@@ -103,14 +109,34 @@ dataDef topName types optionalTypes = do
                          [funD (mkName "readsPrec")
                                [clause [varP depth]
                                        (normalB $ appE (appE (return f_readParen) $ conE $ mkName "False") $
-                                                        lamCaseE $ flip map metricValues $ \(valueName, valueShort) -> do
+                                                        lamCaseE $ (flip map metricValues $ \(valueName, valueShort) -> do
                                                                       restVar <- newName "rest" 
                                                                       let str = metricShort ++ ":" ++ valueShort
                                                                       match (return $ foldr (\c rest -> InfixP (LitP $ CharL c) n_infix rest) (VarP restVar) str)
                                                                             (normalB $ listE [tupE [conE $ toName $ category ++ metricName ++ valueName, varE restVar]])
-                                                                            [])
+                                                                            []
+                                                                   ) ++ [match wildP
+                                                                               (normalB $ listE [])
+                                                                               []]
+                                       )
                                        []]]
   let deriveReadSubs = concat deriveReadSubs'
+  -- deriveReadTop <- do
+  --   recursiveRead <- newName "read"
+  --   depth <- newName "d"
+  --   let list = [("", types)] ++ (map (\(category, (metricName, metricShort, defs)) -> optionalTypes
+  --   instanceD
+  --     (return [])
+  --     (appT (conT $ mkName "Read") $ conT $ toName topName)
+  --     [funD (mkName "readsPrec")
+  --           [clause [varP depth]
+  --                   (normalB $ appE (appE (return f_readParen) $ conE $ mkName "False") $
+  --                                    lamCaseE [match wildP (normalB $ listE []) []])
+  --                   [funD recursiveRead
+  --                         [clause []
+  --                                 (normalB $ foldr (\(category, (metricName, _, _)) built -> appE built (conE $ toName $ category ++ metricName)) (conE $ toName $ topName) list)
+  --                                 []]]]]
   return $ (createTopType:createSubTypes)
         ++ (deriveShowTop:deriveShowSubs)
         ++ (deriveReadSubs)
+

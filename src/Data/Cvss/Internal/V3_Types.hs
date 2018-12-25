@@ -6,6 +6,8 @@ import Data.Cvss.Internal.TH
 --                     | AttackComplexity AttackComplexity
 --                     | PrivilegesRequired PrivilegesRequired deriving (Show, Read)
 
+import Debug.Trace
+
 $(dataDef "CvssV3" [("AttackVector", "AV", [("Network", "N"), ("Adjacent Network", "A"),
                                             ("Local", "L"), ("Physical", "P")]),
                     ("AttackComplexity", "AC", [("Low", "L"), ("High", "H")]),
@@ -18,3 +20,16 @@ $(dataDef "CvssV3" [("AttackVector", "AV", [("Network", "N"), ("Adjacent Network
                                                                 ,("Network", "N")])
                                       ,("Attack Complexity", "MAC", [("Not Defined", "X")
                                                                     ,("Low", "L")])])])
+
+
+testPrec :: Int -> String -> [(CvssV3, String)]
+testPrec d r = 
+                flip concatMap (map (\x -> (CvssV3, x)) $ readsPrec (d+1) r) $ \(builder, (var, '/':rest)) ->
+                  concat $ [flip concatMap (map (\x -> (builder var, x)) $ readsPrec (d+1) $ traceShowId rest) $ \(builder, (var, '/':rest)) ->
+                    concat $ [flip concatMap (map (\x -> (builder var, x)) $ readsPrec (d+1) $ traceShowId rest) $ \(builder, (var, '/':rest)) ->
+                      concat $ [flip concatMap (map (\x -> (builder var, x)) $ readsPrec (d+1) $ traceShowId rest) $ \(builder, (var, '/':rest)) ->
+                      concat $ [[(builder var TemporalReportConfidenceNotDefined EnvironmentalAttackVectorNotDefined EnvironmentalAttackComplexityNotDefined, rest)],
+                                flip concatMap (map (\x -> (builder var, x)) $ readsPrec (d+1) $ traceShowId rest) $ \(builder, (var, '/':rest)) ->
+                      concat $ [flip concatMap (map (\x -> (builder var, x)) $ readsPrec (d+1) $ traceShowId rest) $ \(builder, (var, '/':rest)) ->
+                        concat $ [flip concatMap (map (\x -> (builder var, x)) $ readsPrec (d+1) $ traceShowId rest) $ \(builder, (var, rest)) -> [(builder var, rest)]]]]]]]
+
