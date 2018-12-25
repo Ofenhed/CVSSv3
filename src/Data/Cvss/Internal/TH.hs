@@ -28,13 +28,13 @@ dataDef topName types optionalTypes = do
   f_intercalate <- runQ [| intercalate |]
   f_readParen <- runQ [| readParen |]
   ConE n_infix <- runQ [| (:) |]
-  createSubTypes' <- flip mapM ((Nothing, types):(map (\(v1, v2) -> (Just v1, v2)) optionalTypes)) $ \(category, list) -> flip mapM list $ \(metricName, _, metricValues) -> let category' = case category of Just c -> c ; _ -> "" in
+  createSubTypes' <- flip mapM (("", types):optionalTypes) $ \(category, list) -> flip mapM list $ \(metricName, _, metricValues) ->
                        dataD
                          (return [])
-                         (toName $ category' ++ metricName)
+                         (toName $ category ++ metricName)
                          []
                          Nothing
-                         (flip map metricValues $ \(name, short) -> normalC (toName $ category' ++ metricName ++ name) [])
+                         (flip map metricValues $ \(name, short) -> normalC (toName $ category ++ metricName ++ name) [])
                          [derivClause Nothing $ map (conT . mkName) ["Eq"]]
   let createSubTypes = concat createSubTypes'
   createTopType <- dataD
@@ -42,27 +42,20 @@ dataDef topName types optionalTypes = do
                      (toName topName)
                      []
                      Nothing
-                     [recC (toName topName) $ (flip map types $ \(metricName, _, _) -> varBangType (toName $ toLowerInitial metricName) $ bangType (return $ Bang NoSourceUnpackedness NoSourceStrictness) $ conT $ toName metricName)
-                                           ++ (flip map optionalTypes $ \(categoryName, types) -> varBangType (toName $ toLowerInitial categoryName) $ bangType (return $ Bang NoSourceUnpackedness NoSourceStrictness) $ appT (conT $ mkName "Maybe") $ 
-                                                    (foldr (\(metricName, _, _) rest -> appT rest $ conT $ toName $ categoryName ++ metricName) (tupleT $ length types) types))]
+                     [recC (toName topName) $ (concat $ flip map (("", types):optionalTypes) $ \(category, types) -> flip map types $ \(metricName, _, _) ->
+                                                 varBangType (toName $ toLowerInitial $ category ++ metricName) $
+                                                             bangType (return $ Bang NoSourceUnpackedness
+                                                                                     NoSourceStrictness) $
+                                                                                     conT $ toName $ category ++ metricName)]
                      [derivClause Nothing $ map (conT . mkName) []]
-  deriveReadersForOptional' <- flip mapM optionalTypes $ \(category, types) -> flip mapM (zip [0..] types) $ \(idx, (metricName, _, _)) -> do
-                                    var <- newName "v"
-                                    funD (toName $ toLowerInitial $ category ++ metricName)
-                                         [clause [varP var]
-                                                 (normalB $ appE (varE $ toName $ toLowerInitial category) (varE var))
-                                                 []]
-
-                                                 -- maybe Nothing (\Just a -> a)
-                                                 --AppE (AppE (VarE Data.Maybe.maybe) (ConE GHC.Base.Nothing)) (LamE [ConP GHC.Base.Just [],TupP [VarP a_1,VarP b_2,VarP c_3]] (AppE (ConE GHC.Base.Just) (VarE b_2)))
-  let deriveReadersForOptional = concat deriveReadersForOptional'
-  deriveShowSubs <- flip mapM types $ \(metricName, metricShort, metricValues) ->
-                      instanceD
-                        (return [])
-                        (appT (conT $ mkName "Show") $ conT $ toName metricName)
-                        [funD (mkName "show") $ flip map metricValues $ \(long, short) -> return $ Clause [ConP (toName $ metricName ++ long) []]
-                                                                                                          (NormalB $ LitE $ StringL $ metricShort ++ ":" ++ short)
-                                                                                                          []]
+  deriveShowSubs' <- flip mapM (("", types):optionalTypes) $ \(category, types) -> flip mapM types $ \(metricName, metricShort, metricValues) ->
+                       instanceD
+                         (return [])
+                         (appT (conT $ mkName "Show") $ conT $ toName $ category ++ metricName)
+                         [funD (mkName "show") $ flip map metricValues $ \(long, short) -> return $ Clause [ConP (toName $ category ++ metricName ++ long) []]
+                                                                                                           (NormalB $ LitE $ StringL $ metricShort ++ ":" ++ short)
+                                                                                                           []]
+  let deriveShowSubs = concat deriveShowSubs'
   deriveShowTop <- do
     varName <- newName "var"
     instanceD
@@ -91,4 +84,3 @@ dataDef topName types optionalTypes = do
   return $ (createTopType:createSubTypes)
         ++ (deriveShowTop:deriveShowSubs)
         ++ (deriveReadSubs)
-        ++ deriveReadersForOptional
