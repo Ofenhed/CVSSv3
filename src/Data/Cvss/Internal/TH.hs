@@ -46,6 +46,16 @@ dataDef topName types optionalTypes = do
                                            ++ (flip map optionalTypes $ \(categoryName, types) -> varBangType (toName $ toLowerInitial categoryName) $ bangType (return $ Bang NoSourceUnpackedness NoSourceStrictness) $ appT (conT $ mkName "Maybe") $ 
                                                     (foldr (\(metricName, _, _) rest -> appT rest $ conT $ toName $ categoryName ++ metricName) (tupleT $ length types) types))]
                      [derivClause Nothing $ map (conT . mkName) []]
+  deriveReadersForOptional' <- flip mapM optionalTypes $ \(category, types) -> flip mapM (zip [0..] types) $ \(idx, (metricName, _, _)) -> do
+                                    var <- newName "v"
+                                    funD (toName $ toLowerInitial $ category ++ metricName)
+                                         [clause [varP var]
+                                                 (normalB $ appE (varE $ toName $ toLowerInitial category) (varE var))
+                                                 []]
+
+                                                 -- maybe Nothing (\Just a -> a)
+                                                 --AppE (AppE (VarE Data.Maybe.maybe) (ConE GHC.Base.Nothing)) (LamE [ConP GHC.Base.Just [],TupP [VarP a_1,VarP b_2,VarP c_3]] (AppE (ConE GHC.Base.Just) (VarE b_2)))
+  let deriveReadersForOptional = concat deriveReadersForOptional'
   deriveShowSubs <- flip mapM types $ \(metricName, metricShort, metricValues) ->
                       instanceD
                         (return [])
@@ -81,3 +91,4 @@ dataDef topName types optionalTypes = do
   return $ (createTopType:createSubTypes)
         ++ (deriveShowTop:deriveShowSubs)
         ++ (deriveReadSubs)
+        ++ deriveReadersForOptional
