@@ -142,7 +142,7 @@ dataDef topName types optionalTypes = do
                                                           (listE [appE (createIteration options opt') $ tupE [varE builder, tupE [varE var, varE rest]], useDefaults optionals])
         createIteration (req:moreReq) opt = lamDef' $ (mapper True) $ createIteration moreReq opt
         useDefaults ((category, options):restOptions) = let (toBuilder, [(lastMetricName, _ , ((firstOptionOfLastMectric, _):_))]) = splitAt (length options - 1) options
-                                                            newBuilder = foldr (\(metricName, _, ((firstOptionName, _):_)) state -> appE state (conE $ toName $ category ++ metricName ++ firstOptionName)) (appE (varE builder) $ varE var) toBuilder
+                                                            newBuilder = foldl (\state (metricName, _, ((firstOptionName, _):_)) -> appE state (conE $ toName $ category ++ metricName ++ firstOptionName)) (appE (varE builder) $ varE var) toBuilder
                                                             newVar = conE $ toName $ category ++ lastMetricName ++ firstOptionOfLastMectric
                                                          in appE (createIteration [] restOptions) $ tupE [newBuilder, tupE [newVar, varE rest]]
         createFirstIteration (_:req) opt = foldr (\_ state -> appE f_concat state) ((mapper False) $ createIteration req opt) opt
