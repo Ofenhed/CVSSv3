@@ -5,8 +5,6 @@ import Language.Haskell.TH
 import Data.List (elemIndex, intercalate, concat, find, concatMap)
 import Data.Maybe (isJust, catMaybes)
 
-import Debug.Trace
-
 toName = mkName . (filter ((/=)' '))
 
 toLowerInitial [] = []
@@ -134,20 +132,20 @@ dataDef topName types optionalTypes = do
     var <- newName "var"
     x <- newName "x"
     rest <- newName "r"
-    let lamDef last = lamE [tupP [varP builder, tupP [varP var, if last then varP rest else infixP (litP $ CharL '/') n_infix (varP rest)]]]
+    let lamDef last goodPath = lamCaseE $ (match (tupP [varP builder, tupP [varP var, if last then varP rest else infixP (litP $ CharL '/') n_infix (varP rest)]])
+                                                 (normalB goodPath)
+                                                 []):(if last then [] else [match wildP (normalB $ listE []) []])
         lamDef' = lamDef False
         mapper applyVar = appE (appE (appE f_flip f_concatMap) (appE (appE f_map (lamE [varP x] (tupE [if applyVar then appE (varE builder) (varE var) else varE builder, varE x]))) (appE (appE f_readsPrec $ varE depth) $ varE rest)))
         createIteration [] [] = (lamDef True) (listE [tupE [appE (varE builder) (varE var), (varE rest)]])
-        createIteration [] optionals@((_,options):opt') = lamDef' (appE f_concat
-                                                          -- (listE [(mapper True) $ createIteration (tail options) opt', useDefaults optionals]))
-                                                           -- (listE [useDefaults optionals]))
-                                                          (listE [(mapper True) $ createIteration (tail options) opt']))
+        createIteration [] optionals@((_,options):opt') = lamDef True
+                                                          (listE [appE (createIteration options opt') $ tupE [varE builder, tupE [varE var, varE rest]], useDefaults optionals])
         createIteration (req:moreReq) opt = lamDef' $ (mapper True) $ createIteration moreReq opt
         useDefaults ((category, options):restOptions) = let (toBuilder, [(lastMetricName, _ , ((firstOptionOfLastMectric, _):_))]) = splitAt (length options - 1) options
                                                             newBuilder = foldr (\(metricName, _, ((firstOptionName, _):_)) state -> appE state (conE $ toName $ category ++ metricName ++ firstOptionName)) (appE (varE builder) $ varE var) toBuilder
                                                             newVar = conE $ toName $ category ++ lastMetricName ++ firstOptionOfLastMectric
                                                          in appE (createIteration [] restOptions) $ tupE [newBuilder, tupE [newVar, varE rest]]
-        createFirstIteration (_:req) opt = (mapper False) $ createIteration req opt
+        createFirstIteration (_:req) opt = foldr (\_ state -> appE f_concat state) ((mapper False) $ createIteration req opt) opt
     instanceD
       (return [])
       (appT (conT $ mkName "Read") $ conT $ toName topName)
