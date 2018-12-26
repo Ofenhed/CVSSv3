@@ -2,17 +2,10 @@
 module Data.Cvss.Internal.TH (dataDef) where
 
 import Language.Haskell.TH
-import Data.List (elemIndex, intercalate, concat, find)
+import Data.List (elemIndex, intercalate, concat, find, concatMap)
 import Data.Maybe (isJust, catMaybes)
 
---DataD
---  :: Cxt
---     -> Name
---     -> [TyVarBndr]
---     -> Maybe Kind
---     -> [Con]
---     -> [DerivClause]
---     -> Dec
+import Debug.Trace
 
 toName = mkName . (filter ((/=)' '))
 
@@ -32,21 +25,23 @@ type OptionalSubTypeSpecification = (String, SubTypeSpecification)
 
 dataDef:: String -> [(String, String, [(String, String)])] -> [(String, [(String, String, [(String, String)])])] -> DecsQ
 dataDef topName types optionalTypes = do
-  f__dotFunction <- runQ [| (.) |]
-  f_catMaybes <- runQ [| catMaybes |]
-  f_concat <- runQ [| concat |]
-  f_filter <- runQ [| filter |]
-  f_find <- runQ [| find |]
-  f_flip <- runQ [| flip |]
-  f_fst <- runQ [| fst |]
-  f_intercalate <- runQ [| intercalate |]
-  f_isJust <- runQ [| isJust |]
-  f_length <- runQ [| length |]
-  f_map <- runQ [| map |]
-  f_readParen <- runQ [| readParen |]
-  f_snd <- runQ [| snd |]
-  f_show <- runQ [| show |]
-  ConE n_infix <- runQ [| (:) |]
+  let f__dotFunction = [| (.) |]
+  let f_catMaybes = [| catMaybes |]
+  let f_concat = [| concat |]
+  let f_concatMap = [| concatMap |]
+  let f_filter = [| filter |]
+  let f_find = [| find |]
+  let f_flip = [| flip |]
+  let f_fst = [| fst |]
+  let f_intercalate = [| intercalate |]
+  let f_isJust = [| isJust |]
+  let f_length = [| length |]
+  let f_map = [| map |]
+  let f_readParen = [| readParen |]
+  let f_readsPrec = [| readsPrec |]
+  let f_snd = [| snd |]
+  let f_show = [| show |]
+  ConE n_infix <- [| (:) |]
   createSubTypes' <- flip mapM (("", types):optionalTypes) $ \(category, list) -> flip mapM list $ \(metricName, _, metricValues) ->
                        dataD
                          (return [])
@@ -82,8 +77,8 @@ dataDef topName types optionalTypes = do
       (appT (conT $ mkName "Show") $ conT $ toName topName)
       [funD (mkName "show") [clause [varP varName]
                                     (normalB $ appE
-                                                 (appE (return f_intercalate) $ litE $ stringL "/")
-                                                 (appE (return f_concat) $ listE
+                                                 (appE (f_intercalate) $ litE $ stringL "/")
+                                                 (appE (f_concat) $ listE
                                                                     ((listE $ flip map types $ \(metricName, metricShort, _) -> appE (varE $ mkName "show") $ appE (varE $ toName $ toLowerInitial metricName) (varE varName)):
                                                                     (flip map optionalTypes $ \(category, types) -> do
                                                                        valueVar <- newName "value"
@@ -92,12 +87,12 @@ dataDef topName types optionalTypes = do
                                                                                   (normalB $ listE $ flip map types $ \(metricName, metricShort, (((defName), _):_)) -> do
                                                                                               matchVar <- newName "match"
                                                                                               caseE (appE (varE $ toName $ toLowerInitial $ category ++ metricName) (varE varName))
-                                                                                                       [match (conP (toName $ category ++ metricName ++ defName) []) (normalB $ tupE [conE $ mkName "False", appE (return f_show) $ conE (toName $ category ++ metricName ++ defName)]) []
-                                                                                                       ,match (varP matchVar) (normalB $ tupE [conE $ mkName "True", appE (return f_show) $ varE matchVar]) []])
-                                                                                  []] $ condE (appE (return f_isJust) 
-                                                                                                 (appE (appE (return f_find) (return f_fst)) $
+                                                                                                       [match (conP (toName $ category ++ metricName ++ defName) []) (normalB $ tupE [conE $ mkName "False", appE (f_show) $ conE (toName $ category ++ metricName ++ defName)]) []
+                                                                                                       ,match (varP matchVar) (normalB $ tupE [conE $ mkName "True", appE (f_show) $ varE matchVar]) []])
+                                                                                  []] $ condE (appE (f_isJust) 
+                                                                                                 (appE (appE (f_find) (f_fst)) $
                                                                                                        varE listVar))
-                                                                                           (appE (appE (return f_map) (return f_snd)) $ varE listVar)
+                                                                                           (appE (appE (f_map) (f_snd)) $ varE listVar)
                                                                                            (listE [])
                                                                     ))))
                                     []]]
@@ -108,7 +103,7 @@ dataDef topName types optionalTypes = do
                          (appT (conT $ mkName "Read") $ conT $ toName $ category ++ metricName)
                          [funD (mkName "readsPrec")
                                [clause [varP depth]
-                                       (normalB $ appE (appE (return f_readParen) $ conE $ mkName "False") $
+                                       (normalB $ appE (appE (f_readParen) $ conE $ mkName "False") $
                                                         lamCaseE $ (flip map metricValues $ \(valueName, valueShort) -> do
                                                                       restVar <- newName "rest" 
                                                                       let str = metricShort ++ ":" ++ valueShort
@@ -121,22 +116,48 @@ dataDef topName types optionalTypes = do
                                        )
                                        []]]
   let deriveReadSubs = concat deriveReadSubs'
-  -- deriveReadTop <- do
-  --   recursiveRead <- newName "read"
-  --   depth <- newName "d"
-  --   let list = [("", types)] ++ (map (\(category, (metricName, metricShort, defs)) -> optionalTypes
-  --   instanceD
-  --     (return [])
-  --     (appT (conT $ mkName "Read") $ conT $ toName topName)
-  --     [funD (mkName "readsPrec")
-  --           [clause [varP depth]
-  --                   (normalB $ appE (appE (return f_readParen) $ conE $ mkName "False") $
-  --                                    lamCaseE [match wildP (normalB $ listE []) []])
-  --                   [funD recursiveRead
-  --                         [clause []
-  --                                 (normalB $ foldr (\(category, (metricName, _, _)) built -> appE built (conE $ toName $ category ++ metricName)) (conE $ toName $ topName) list)
-  --                                 []]]]]
+-- testPrec :: Int -> String -> [(CvssV3, String)]
+-- testPrec d r = 
+--                 flip concatMap (map (\x -> (CvssV3, x)) $ readsPrec (d+1) r) $ \(builder, (var, '/':rest)) ->
+--                   concat $ [flip concatMap (map (\x -> (builder var, x)) $ readsPrec (d+1) $ traceShowId rest) $ \(builder, (var, '/':rest)) ->
+--                     concat $ [flip concatMap (map (\x -> (builder var, x)) $ readsPrec (d+1) $ traceShowId rest) $ \(builder, (var, '/':rest)) ->
+--                       concat $ [flip concatMap (map (\x -> (builder var, x)) $ readsPrec (d+1) $ traceShowId rest) $ \(builder, (var, '/':rest)) ->
+--                       concat $ [[(builder var TemporalReportConfidenceNotDefined EnvironmentalAttackVectorNotDefined EnvironmentalAttackComplexityNotDefined, rest)],
+--                                 flip concatMap (map (\x -> (builder var, x)) $ readsPrec (d+1) $ traceShowId rest) $ \(builder, (var, '/':rest)) ->
+--                       concat $ [flip concatMap (map (\x -> (builder var, x)) $ readsPrec (d+1) $ traceShowId rest) $ \(builder, (var, '/':rest)) ->
+--                         concat $ [flip concatMap (map (\x -> (builder var, x)) $ readsPrec (d+1) $ traceShowId rest) $ \(builder, (var, rest)) -> [(builder var, rest)]]]]]]]
+
+  deriveReadTop <- do
+    recursiveRead <- newName "read"
+    depth <- newName "d"
+    builder <- newName "builder"
+    var <- newName "var"
+    x <- newName "x"
+    rest <- newName "r"
+    let lamDef last = lamE [tupP [varP builder, tupP [varP var, if last then varP rest else infixP (litP $ CharL '/') n_infix (varP rest)]]]
+        lamDef' = lamDef False
+        mapper applyVar = appE (appE (appE f_flip f_concatMap) (appE (appE f_map (lamE [varP x] (tupE [if applyVar then appE (varE builder) (varE var) else varE builder, varE x]))) (appE (appE f_readsPrec $ varE depth) $ varE rest)))
+        createIteration [] [] = (lamDef True) (listE [tupE [appE (varE builder) (varE var), (varE rest)]])
+        createIteration [] optionals@((_,options):opt') = lamDef' (appE f_concat
+                                                          -- (listE [(mapper True) $ createIteration (tail options) opt', useDefaults optionals]))
+                                                           -- (listE [useDefaults optionals]))
+                                                          (listE [(mapper True) $ createIteration (tail options) opt']))
+        createIteration (req:moreReq) opt = lamDef' $ (mapper True) $ createIteration moreReq opt
+        useDefaults ((category, options):restOptions) = let (toBuilder, [(lastMetricName, _ , ((firstOptionOfLastMectric, _):_))]) = splitAt (length options - 1) options
+                                                            newBuilder = foldr (\(metricName, _, ((firstOptionName, _):_)) state -> appE state (conE $ toName $ category ++ metricName ++ firstOptionName)) (appE (varE builder) $ varE var) toBuilder
+                                                            newVar = conE $ toName $ category ++ lastMetricName ++ firstOptionOfLastMectric
+                                                         in appE (createIteration [] restOptions) $ tupE [newBuilder, tupE [newVar, varE rest]]
+        createFirstIteration (_:req) opt = (mapper False) $ createIteration req opt
+    instanceD
+      (return [])
+      (appT (conT $ mkName "Read") $ conT $ toName topName)
+      [funD (mkName "readsPrec")
+            [clause [varP depth, varP rest]
+                    (normalB $ createFirstIteration types optionalTypes)
+                    [funD builder [clause [] (normalB $ conE $ toName topName) []]]]]
+                    -- This should create a recursive call. Everytime there is an optional route, it should forge to a path where it is not optional and a path where it has default values. See code above.
+
   return $ (createTopType:createSubTypes)
         ++ (deriveShowTop:deriveShowSubs)
-        ++ (deriveReadSubs)
+        ++ (deriveReadTop:deriveReadSubs)
 
