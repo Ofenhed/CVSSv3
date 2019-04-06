@@ -18,6 +18,6 @@ main = do
                                        putStrLn $ "Temporal score:      " ++ temp
                                        putStrLn $ "Environmental score: " ++ env
                _ -> do putStrLn $ "Could not decode vector " ++ str ++ "."
-                       putStrLn "Make sure you use a vector that follows the specification, such as https://nvd.nist.gov/vuln-metrics/cvss/v3-calculator"
+                       putStrLn "Make sure you use a vector that includes all values in the defined order, with all subgroup values either set ur unset, such as https://nvd.nist.gov/vuln-metrics/cvss/v3-calculator"
                        showArgs
     _ -> showArgs
