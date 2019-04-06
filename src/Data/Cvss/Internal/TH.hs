@@ -3,7 +3,9 @@ module Data.Cvss.Internal.TH (dataDef) where
 
 import Language.Haskell.TH
 import Data.List (elemIndex, intercalate, concat, find, concatMap)
-import Data.Maybe (isJust, catMaybes)
+import Data.Maybe (isJust, catMaybes, mapMaybe)
+import Data.Cvss.Internal.V3_Types (Group(..), groupName, groupShort, groupSimpleList, groupToSimple, ScorableCvss(..))
+import Data.Ratio ((%))
 
 toName = mkName . (filter ((/=)' '))
 
@@ -20,8 +22,7 @@ type SubTypeEnums = [SubTypeEnum]
 type SubTypeSpecification = (String, String, SubTypeEnums)
 type OptionalSubTypeSpecification = (String, SubTypeSpecification)
 
-
-dataDef:: String -> [(String, String, [(String, String)])] -> [(String, [(String, String, [(String, String)])])] -> DecsQ
+dataDef:: String -> [Group] -> [(String, [Group])] -> DecsQ
 dataDef topName types optionalTypes = do
   let f__dotFunction = [| (.) |]
   let f_catMaybes = [| catMaybes |]
@@ -40,13 +41,13 @@ dataDef topName types optionalTypes = do
   let f_snd = [| snd |]
   let f_show = [| show |]
   ConE n_infix <- [| (:) |]
-  createSubTypes' <- flip mapM (("", types):optionalTypes) $ \(category, list) -> flip mapM list $ \(metricName, _, metricValues) ->
+  createSubTypes' <- flip mapM (("", types):optionalTypes) $ \(category, list) -> flip mapM list $ \group ->
                        dataD
                          (return [])
-                         (toName $ category ++ metricName)
+                         (toName $ category ++ groupName group)
                          []
                          Nothing
-                         (flip map metricValues $ \(name, short) -> normalC (toName $ category ++ metricName ++ name) [])
+                         (flip map (groupSimpleList group) $ \(name, short) -> normalC (toName $ category ++ groupName group ++ name) [])
                          [derivClause Nothing $ map (conT . mkName) ["Eq"]]
   let createSubTypes = concat createSubTypes'
   createTopType <- dataD
@@ -54,20 +55,28 @@ dataDef topName types optionalTypes = do
                      (toName topName)
                      []
                      Nothing
-                     [recC (toName topName) $ (concat $ flip map (("", types):optionalTypes) $ \(category, types) -> flip map types $ \(metricName, _, _) ->
-                                                 varBangType (toName $ toLowerInitial $ category ++ metricName) $
+                     [recC (toName topName) $ (concat $ flip map (("", types):optionalTypes) $ \(category, types) -> flip map types $ \group ->
+                                                 varBangType (toName $ toLowerInitial $ category ++ groupName group) $
                                                              bangType (return $ Bang NoSourceUnpackedness
                                                                                      NoSourceStrictness) $
-                                                                                     conT $ toName $ category ++ metricName)]
-                     [derivClause Nothing $ map (conT . mkName) []]
-  deriveShowSubs' <- flip mapM (("", types):optionalTypes) $ \(category, types) -> flip mapM types $ \(metricName, metricShort, metricValues) ->
+                                                                                     conT $ toName $ category ++ groupName group)]
+                     [derivClause Nothing $ map (conT . mkName) ["Eq"]]
+  deriveShowSubs' <- flip mapM (("", types):optionalTypes) $ \(category, types) -> flip mapM types $ \group ->
                        instanceD
                          (return [])
-                         (appT (conT $ mkName "Show") $ conT $ toName $ category ++ metricName)
-                         [funD (mkName "show") $ flip map metricValues $ \(long, short) -> return $ Clause [ConP (toName $ category ++ metricName ++ long) []]
-                                                                                                           (NormalB $ LitE $ StringL $ metricShort ++ ":" ++ short)
-                                                                                                           []]
+                         (appT (conT $ mkName "Show") $ conT $ toName $ category ++ groupName group)
+                         [funD (mkName "show") $ flip map (groupSimpleList group) $ \(long, short) -> return $ Clause [ConP (toName $ category ++ groupName group ++ long) []]
+                                                                                                                      (NormalB $ LitE $ StringL $ groupShort group ++ ":" ++ short)
+                                                                                                                      []]
   let deriveShowSubs = concat deriveShowSubs'
+  deriveScoreSubs' <- flip mapM (("", types):optionalTypes) $ \(category, types) -> flip mapM (mapMaybe (\x -> case x of group@(GroupScored _ _ _) -> Just group ; _ -> Nothing) types) $ \(GroupScored groupName _ list) ->
+                       instanceD
+                         (return [])
+                         (appT (conT $ mkName "ScorableCvss") $ conT $ toName $ category ++ groupName)
+                         [funD (mkName "getScore") $ flip map list $ \(long, short, score) -> return $ Clause [ConP (toName $ category ++ groupName ++ long) []]
+                                                                                                                    (NormalB $ LitE $ RationalL $ score % 100)
+                                                                                                                    []]
+  let deriveScoreSubs = concat deriveScoreSubs'
   deriveShowTop <- do
     varName <- newName "var"
     instanceD
@@ -77,15 +86,16 @@ dataDef topName types optionalTypes = do
                                     (normalB $ appE
                                                  (appE (f_intercalate) $ litE $ stringL "/")
                                                  (appE (f_concat) $ listE
-                                                                    ((listE $ flip map types $ \(metricName, metricShort, _) -> appE (varE $ mkName "show") $ appE (varE $ toName $ toLowerInitial metricName) (varE varName)):
+                                                                    ((listE $ flip map types $ \group -> appE (varE $ mkName "show") $ appE (varE $ toName $ toLowerInitial $ groupName group) (varE varName)):
                                                                     (flip map optionalTypes $ \(category, types) -> do
                                                                        valueVar <- newName "value"
                                                                        listVar <- newName "list"
                                                                        letE [valD (varP listVar)
-                                                                                  (normalB $ listE $ flip map types $ \(metricName, metricShort, (((defName), _):_)) -> do
+                                                                                  (normalB $ listE $ flip map types $ \group -> do
+                                                                                              let ((defName, _):_) = groupSimpleList group
                                                                                               matchVar <- newName "match"
-                                                                                              caseE (appE (varE $ toName $ toLowerInitial $ category ++ metricName) (varE varName))
-                                                                                                       [match (conP (toName $ category ++ metricName ++ defName) []) (normalB $ tupE [conE $ mkName "False", appE (f_show) $ conE (toName $ category ++ metricName ++ defName)]) []
+                                                                                              caseE (appE (varE $ toName $ toLowerInitial $ category ++ groupName group) (varE varName))
+                                                                                                       [match (conP (toName $ category ++ groupName group ++ defName) []) (normalB $ tupE [conE $ mkName "False", appE (f_show) $ conE (toName $ category ++ groupName group ++ defName)]) []
                                                                                                        ,match (varP matchVar) (normalB $ tupE [conE $ mkName "True", appE (f_show) $ varE matchVar]) []])
                                                                                   []] $ condE (appE (f_isJust) 
                                                                                                  (appE (appE (f_find) (f_fst)) $
@@ -94,19 +104,19 @@ dataDef topName types optionalTypes = do
                                                                                            (listE [])
                                                                     ))))
                                     []]]
-  deriveReadSubs' <- flip mapM (("",types):optionalTypes) $ \(category, types) -> flip mapM types $ \(metricName, metricShort, metricValues) -> do
+  deriveReadSubs' <- flip mapM (("",types):optionalTypes) $ \(category, types) -> flip mapM types $ \group -> do
                        depth <- newName "d" 
                        instanceD
                          (return [])
-                         (appT (conT $ mkName "Read") $ conT $ toName $ category ++ metricName)
+                         (appT (conT $ mkName "Read") $ conT $ toName $ category ++ groupName group)
                          [funD (mkName "readsPrec")
                                [clause [varP depth]
                                        (normalB $ appE (appE (f_readParen) $ conE $ mkName "False") $
-                                                        lamCaseE $ (flip map metricValues $ \(valueName, valueShort) -> do
+                                                        lamCaseE $ (flip map (groupSimpleList group) $ \(valueName, valueShort) -> do
                                                                       restVar <- newName "rest" 
-                                                                      let str = metricShort ++ ":" ++ valueShort
+                                                                      let str = groupShort group ++ ":" ++ valueShort
                                                                       match (return $ foldr (\c rest -> InfixP (LitP $ CharL c) n_infix rest) (VarP restVar) str)
-                                                                            (normalB $ listE [tupE [conE $ toName $ category ++ metricName ++ valueName, varE restVar]])
+                                                                            (normalB $ listE [tupE [conE $ toName $ category ++ groupName group ++ valueName, varE restVar]])
                                                                             []
                                                                    ) ++ [match wildP
                                                                                (normalB $ listE [])
@@ -151,11 +161,12 @@ dataDef topName types optionalTypes = do
       (appT (conT $ mkName "Read") $ conT $ toName topName)
       [funD (mkName "readsPrec")
             [clause [varP depth, varP rest]
-                    (normalB $ createFirstIteration types optionalTypes)
+                    (normalB $ createFirstIteration (map groupToSimple types) (map (\(name, g) -> (name, map groupToSimple g)) optionalTypes))
                     [funD builder [clause [] (normalB $ conE $ toName topName) []]]]]
                     -- This should create a recursive call. Everytime there is an optional route, it should forge to a path where it is not optional and a path where it has default values. See code above.
 
   return $ (createTopType:createSubTypes)
         ++ (deriveShowTop:deriveShowSubs)
         ++ (deriveReadTop:deriveReadSubs)
+        ++ deriveScoreSubs
 
